@@ -1,0 +1,7 @@
+# Sicherheitsnetz: Zuordnungslisten niemals veröffentlichen
+privat/
+*zuordnung*
+*.pdf
+*.xls
+*.xlsx
+*.csv

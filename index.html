@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Farmen in Angola</title>
+<meta name="description" content="Interaktive Karte historischer Farmen, Handelsplätze und Orte deutschstämmiger Siedler in Angola – anonymisiert über Referenznummern.">
+<meta name="robots" content="noindex">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon.ico" sizes="32x32">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#a8461f">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Source+Sans+3:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: Vollbild-Karte, links eine Arbeitsleiste wie ein Kartenrand (Legende/Register); mobil als Schublade unten */
+:root{
+  --s:1;               /* Schriftgröße, vom Nutzer einstellbar */
+  --bg:#f3efe6; --panel:#fbf9f4; --fg:#2a2620; --muted:#6f6758; --line:#ddd5c4;
+  --accent:#a8461f;      /* rote Erde des Planalto */
+  --farm:#5b6b2e;        /* Kaffee/Sisal-Grün */
+  --kauf:#2f5f86;        /* Handel */
+  --ort:#7a7264;         /* Orte */
+  --inst:#7b3f7a;        /* Schule, Mission, Sonstige */
+  --chip:#ece5d6;
+  --f-display:"Barlow Condensed","Arial Narrow",sans-serif;
+  --f-body:"Source Sans 3",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#1b1916; --panel:#23201c; --fg:#ece6da; --muted:#a59c8b; --line:#3a352d;
+  --accent:#e0794b; --farm:#9fb35a; --kauf:#6fa3d0; --ort:#b0a794; --inst:#c58ac3; --chip:#2f2b25; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#1b1916; --panel:#23201c; --fg:#ece6da; --muted:#a59c8b; --line:#3a352d;
+  --accent:#e0794b; --farm:#9fb35a; --kauf:#6fa3d0; --ort:#b0a794; --inst:#c58ac3; --chip:#2f2b25; color-scheme:dark}
+
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font:calc(15px*var(--s))/1.45 var(--f-body);display:flex;overflow:hidden}
+#map{flex:1;min-width:0;height:100%;background:var(--bg)}
+aside{width:calc(380px + 160px*(var(--s) - 1));max-width:100%;height:100%;display:flex;flex-direction:column;background:var(--panel);border-right:1px solid var(--line);z-index:1000}
+header{padding:18px max(18px,env(safe-area-inset-left,0px)) 12px 18px;border-bottom:1px solid var(--line)}
+h1{font:600 calc(30px*var(--s))/1 var(--f-display);letter-spacing:.01em;margin:0;text-wrap:balance}
+.sub{color:var(--muted);font-size:calc(13px*var(--s));margin-top:6px}
+.search{display:flex;gap:8px;margin-top:14px}
+.search input{flex:1;min-width:0;font:500 calc(20px*var(--s)) var(--f-mono);padding:8px 12px;border:1.5px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);letter-spacing:.08em}
+.search input:focus{outline:none;border-color:var(--accent)}
+.search button{font:600 calc(15px*var(--s)) var(--f-display);letter-spacing:.06em;text-transform:uppercase;padding:0 14px;border:0;border-radius:6px;background:var(--accent);color:#fff;cursor:pointer}
+.msg{font-size:calc(13px*var(--s));min-height:18px;margin-top:6px;color:var(--accent)}
+nav{display:flex;border-bottom:1px solid var(--line)}
+nav button{flex:1;background:none;border:0;border-bottom:2px solid transparent;padding:10px 0;font:600 calc(15px*var(--s)) var(--f-display);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);cursor:pointer}
+nav button[aria-selected="true"]{color:var(--fg);border-bottom-color:var(--accent)}
+.tab{flex:1;overflow:auto;padding:16px 18px 24px}
+.lbl{font:600 calc(12px*var(--s)) var(--f-display);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}
+fieldset{border:0;padding:0;margin:0 0 18px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:var(--chip);font-size:calc(13px*var(--s));cursor:pointer;user-select:none;border:1px solid transparent}
+.chip input{position:absolute;opacity:0;pointer-events:none}
+.chip:has(input:checked){border-color:var(--fg)}
+.chip:has(input:not(:checked)){opacity:.45}
+.chip:has(input:focus-visible){outline:2px solid var(--accent)}
+.dot{width:10px;height:10px;border-radius:50%;flex:none}
+select,.range input{font:calc(14px*var(--s)) var(--f-body);padding:6px 8px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--fg);width:100%}
+.ha{display:flex;align-items:center;gap:12px}
+.ha input{flex:1;min-width:0;accent-color:var(--accent)}
+.ha output{font:500 calc(14px*var(--s)) var(--f-mono);min-width:6.5em;text-align:right;font-variant-numeric:tabular-nums}
+#f-ha-note{margin:6px 0 0}
+.range input{font-family:var(--f-mono)}
+.toggle{display:flex;gap:8px;align-items:center;font-size:calc(14px*var(--s));margin-top:6px;cursor:pointer}
+.count{font:500 calc(13px*var(--s)) var(--f-mono);color:var(--muted);padding:10px 18px;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:8px}
+.count button{background:none;border:0;color:var(--accent);font:inherit;cursor:pointer;padding:0}
+ol.list{list-style:none;margin:0;padding:0}
+ol.list li{display:grid;grid-template-columns:calc(52px*var(--s)) 1fr auto;gap:10px;align-items:baseline;padding:8px 4px;border-bottom:1px solid var(--line);cursor:pointer}
+ol.list li:hover,ol.list li:focus-visible{background:var(--chip);outline:none}
+.nr{font:500 calc(15px*var(--s)) var(--f-mono);font-variant-numeric:tabular-nums}
+.t{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.h{font:calc(12px*var(--s)) var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.kpis{display:grid;grid-template-columns:1fr 1fr;gap:14px 12px;margin-bottom:22px}
+.kpi b{display:block;font:600 calc(28px*var(--s))/1 var(--f-display)}
+.kpi span{font-size:calc(12px*var(--s));color:var(--muted)}
+.bars{display:grid;gap:5px;margin-bottom:22px}
+.bar{display:grid;grid-template-columns:calc(120px*var(--s)) 1fr calc(34px*var(--s));gap:8px;align-items:center;font-size:calc(13px*var(--s))}
+.bar i{display:block;height:10px;border-radius:2px;background:var(--accent)}
+.bar em{font:normal calc(12px*var(--s)) var(--f-mono);text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
+.bar span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.note{font-size:calc(12px*var(--s));color:var(--muted);line-height:1.5}
+
+/* Marker */
+.pin{font:500 calc(11px*var(--s))/1 var(--f-mono);color:#fff;padding:3px 5px;border-radius:3px;border:1.5px solid rgba(255,255,255,.85);box-shadow:0 1px 3px rgba(0,0,0,.35);white-space:nowrap;transform:translate(-50%,-50%);display:inline-block}
+.pin.sel{outline:3px solid var(--accent);outline-offset:1px}
+.pin.sammel{border-style:dashed}
+.marker-cluster div{background:var(--accent);color:#fff;font:600 calc(13px*var(--s)) var(--f-display);width:34px;height:34px;margin:3px;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 30%,transparent)}
+.marker-cluster{background:none}
+.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:var(--panel);color:var(--fg)}
+.leaflet-popup-content{margin:14px 16px;font:calc(14px*var(--s))/1.45 var(--f-body);min-width:230px}
+.pop-nr{font:500 calc(24px*var(--s))/1 var(--f-mono);color:var(--accent)}
+.pop-t{font:600 calc(20px*var(--s))/1.1 var(--f-display);margin:4px 0 2px}
+.pop-typ{font-size:calc(12px*var(--s));color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.pop dl{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;margin:10px 0 8px}
+.pop dt{color:var(--muted);font-size:calc(12px*var(--s))}
+.pop dd{margin:0;font-size:calc(13px*var(--s))}
+.pop .mono{font-family:var(--f-mono);font-size:calc(12px*var(--s))}
+.pop .warn{font-size:calc(12px*var(--s));background:var(--chip);padding:6px 8px;border-radius:4px;margin:6px 0}
+.pop a{color:var(--accent)}
+.leaflet-container a.leaflet-popup-close-button{color:var(--muted)}
+.leaflet-control-layers{background:var(--panel);color:var(--fg)}
+
+.size{display:flex;align-items:center;gap:8px;margin-top:12px}
+.size .lbl{margin:0;flex:none}
+.size button{width:34px;height:30px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);cursor:pointer;font:600 calc(15px*var(--s)) var(--f-display);flex:none;line-height:1}
+.size button:hover{border-color:var(--fg)}
+.size button:disabled{opacity:.35;cursor:default}
+.size input[type=range]{flex:1;min-width:60px;accent-color:var(--accent)}
+.size output{font:500 calc(13px*var(--s)) var(--f-mono);width:4.2em;text-align:right;color:var(--muted);flex:none}
+.seg{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.seg label{flex:1;text-align:center;padding:6px 4px;cursor:pointer;font-size:calc(13px*var(--s));background:var(--bg)}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg label:has(input:checked){background:var(--fg);color:var(--panel)}
+.seg label:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:-2px}
+.treffer{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.treffer button{border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:5px;padding:3px 8px;font:calc(13px*var(--s)) var(--f-body);cursor:pointer}
+.treffer button b{font-family:var(--f-mono);font-weight:500;color:var(--accent)}
+.legende{background:var(--panel);color:var(--fg);padding:12px 14px;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.3);font:calc(15px*var(--s))/1.6 var(--f-body);max-width:300px}
+.legende b{cursor:pointer;display:block;font:600 calc(14px*var(--s)) var(--f-display);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:5px}
+.legende.zu .leg,.legende.zu .leg-fuss{display:none}
+.legende .leg{display:flex;width:100%;align-items:center;gap:9px;background:none;border:0;padding:1px 4px;margin:0 -4px;border-radius:4px;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.legende .leg:hover{background:var(--chip)}
+.legende .leg:focus-visible{outline:2px solid var(--accent)}
+.legende .leg.aus{opacity:.4}
+.legende .leg.aus .lt{text-decoration:line-through}
+.legende .lt{white-space:nowrap}
+.legende .leg-fuss{margin-top:6px;font-size:calc(12px*var(--s));color:var(--muted)}
+.legende .leg-alle{background:var(--accent);color:#fff;border:0;border-radius:5px;padding:3px 10px;font:600 calc(13px*var(--s)) var(--f-body);cursor:pointer}
+.legende .dot{width:14px;height:14px;border:2px solid rgba(255,255,255,.85);box-shadow:0 0 0 1px rgba(0,0,0,.15)}
+.legende em{font:normal calc(14px*var(--s)) var(--f-mono);color:var(--muted);margin-left:auto;padding-left:8px}
+.mess-btn{width:34px;height:34px;display:flex;align-items:center;justify-content:center;background:#fff;color:#222;cursor:pointer;border:0}
+.mess-btn.an{background:var(--accent);color:#fff}
+.mess-panel{background:var(--panel);color:var(--fg);padding:8px 10px;border-radius:6px;box-shadow:0 1px 5px rgba(0,0,0,.3);font:calc(13px*var(--s))/1.4 var(--f-body);max-width:260px}
+.mess-panel strong{font:500 calc(18px*var(--s)) var(--f-mono);display:block}
+.mess-panel .zeile{display:flex;gap:6px;margin-top:6px}
+.mess-panel button{border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:5px;padding:3px 9px;cursor:pointer;font:inherit}
+.mess-label{background:var(--panel);color:var(--fg);border:0;font:500 calc(12px*var(--s)) var(--f-mono);padding:2px 6px;border-radius:3px;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.mess-label::before{display:none}
+.leaflet-container.messen{cursor:crosshair}
+.kopf{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.lang{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;flex:none;margin-top:2px}
+.lang button{border:0;background:var(--bg);color:var(--muted);font:600 calc(13px*var(--s)) var(--f-display);letter-spacing:.06em;padding:5px 8px;cursor:pointer}
+.lang button[aria-pressed="true"]{background:var(--fg);color:var(--panel)}
+.lang button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+#drawer{display:none}
+@media (max-width:760px){
+  body{flex-direction:column}
+  aside{position:fixed;left:0;right:0;bottom:0;width:100%;height:auto;max-height:72%;border-right:0;border-top:1px solid var(--line);border-radius:14px 14px 0 0;box-shadow:0 -6px 24px rgba(0,0,0,.18);padding-bottom:env(safe-area-inset-bottom,0px);transition:transform .25s}
+  aside.zu{transform:translateY(calc(100% - var(--peek,170px)))}
+  header{padding:8px max(16px,env(safe-area-inset-left,0px)) 10px max(16px,env(safe-area-inset-right,0px))}
+  #drawer{display:block;margin:0 auto 8px;width:44px;height:5px;border-radius:3px;background:var(--line);border:0;cursor:pointer}
+  h1{font-size:calc(22px*var(--s))}.sub{display:none}
+  .search{margin-top:8px}
+  .tab{max-height:44vh}
+}
+@media (prefers-reduced-motion:reduce){aside{transition:none}}
+</style>
+</head>
+<body>
+<aside id="side">
+  <header>
+    <button id="drawer" data-i18n-aria="drawer" aria-label="Leiste ein-/ausklappen"></button>
+    <div class="kopf"><h1 data-i18n="title">Farmen in Angola</h1><div class="lang" role="group" id="lang" data-i18n-aria="lang" aria-label="Sprache"><button type="button" data-lang="de" lang="de">DE</button><button type="button" data-lang="en" lang="en">EN</button><button type="button" data-lang="pt" lang="pt">PT</button></div></div>
+    <div class="sub" data-i18n="sub">Farmen, Handelsplätze und Orte · Personen nur als Referenznummer</div>
+    <form class="search" id="sform" role="search">
+      <input id="q" list="vorschlaege" autocomplete="off" placeholder="Nr. oder Ort" aria-label="Nummer, Farm- oder Ortsname" data-i18n-ph="search_ph" data-i18n-aria="search_aria"><datalist id="vorschlaege"></datalist>
+      <button type="submit" data-i18n="search_btn">Suchen</button>
+    </form>
+    <div class="msg" id="msg" aria-live="polite"></div><div class="treffer" id="treffer"></div>
+    <div class="size" role="group" aria-label="Schriftgröße" data-i18n-aria="font_group">
+      <span class="lbl" data-i18n="font">Schrift</span>
+      <button type="button" id="s-minus" aria-label="Schrift kleiner" data-i18n-aria="font_minus" data-i18n-title="font_minus">A−</button>
+      <input type="range" id="s-range" min="90" max="150" step="10" value="100" aria-label="Schriftgröße in Prozent" data-i18n-aria="font_range">
+      <button type="button" id="s-plus" aria-label="Schrift größer" data-i18n-aria="font_plus" data-i18n-title="font_plus" style="font-size:calc(19px*var(--s))">A+</button>
+      <output id="s-out" for="s-range">100 %</output>
+    </div>
+  </header>
+  <nav role="tablist">
+    <button role="tab" aria-selected="true" data-tab="filter" data-i18n="tab_filter">Filter</button>
+    <button role="tab" aria-selected="false" data-tab="liste" data-i18n="tab_list">Liste</button>
+    <button role="tab" aria-selected="false" data-tab="stat" data-i18n="tab_stats">Statistik</button>
+  </nav>
+  <section class="tab" id="tab-filter">
+    <fieldset><p class="lbl" data-i18n="color_by">Pins einfärben nach</p>
+      <div class="seg" id="f-farbe"><label><input type="radio" name="farbe" value="bew" checked><span data-i18n="by_bew">Bewirtschaftung</span></label><label><input type="radio" name="farbe" value="art"><span data-i18n="by_art">Art</span></label></div></fieldset>
+    <fieldset><p class="lbl" data-i18n="f_art">Art</p><div class="chips" id="f-typ"></div></fieldset>
+    <fieldset><p class="lbl" data-i18n="f_mit">Mitglied</p><div class="chips" id="f-mit"></div></fieldset>
+    <fieldset><p class="lbl" data-i18n="f_bew">Bewirtschaftung</p>
+      <select id="f-bew"><option value="" data-i18n="all">Alle</option></select></fieldset>
+    <fieldset><p class="lbl" data-i18n="f_ha">Mindestfläche</p>
+      <div class="ha"><input type="range" id="f-ha" min="0" max="9" step="1" value="0" aria-label="Mindestfläche in Hektar" data-i18n-aria="f_ha_aria"><output id="f-ha-out" for="f-ha">alle</output></div>
+      <p class="note" id="f-ha-note" hidden data-i18n="ha_note">Einträge ohne Flächenangabe sind ausgeblendet.</p>
+      <label class="toggle"><input type="checkbox" id="f-sammel" checked> <span data-i18n="f_sammel">Sammelpunkte zeigen (genäherte Lage)</span></label>
+    </fieldset>
+    <p class="note" data-i18n="sammel_note">Gestrichelte Nummern gehören zu einem Sammelpunkt (Ortszentrum oder Region), weil die genaue Lage nicht bekannt ist. Einträge mit gleicher Koordinate sind im Kreis um ca. 100 m versetzt.</p>
+  </section>
+  <section class="tab" id="tab-liste" hidden><ol class="list" id="list"></ol></section>
+  <section class="tab" id="tab-stat" hidden><div id="stats"></div></section>
+  <div class="count"><span id="cnt"></span><button id="reset" type="button" data-i18n="reset">Filter zurücksetzen</button></div>
+</aside>
+<div id="map"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js"></script>
+<script src="data.js"></script>
+<script src="i18n.js"></script>
+<script>
+(function(){
+const D = window.ORTE || [];
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const TYP_GROUP = t => t==="Farm"?"farm":t==="Kaufmann"?"kauf":t==="Ort"?"ort":"inst";
+/* Sprache */
+const I=window.I18N;
+let LANG=(()=>{let l=null;try{l=localStorage.getItem("sprache")}catch(e){}
+  if(!I.langs[l]){const n=(navigator.language||"de").slice(0,2).toLowerCase();l=I.langs[n]?n:"en"}return l})();
+const fill=(s,v)=>v?s.replace(/\{(\w+)\}/g,(_,k)=>v[k]??""):s;
+const T=(k,v)=>{const e=I.UI[k];return fill(e?(e[LANG]||e.de):k,v)};
+const TR=s=>{if(!s)return s;const e=I.TERMS[s];return LANG==="de"||!e?s:(e[LANG]||s)};
+const GL=k=>{const e=I.GROUP[k];return e[LANG]||e.de};
+const IL=k=>{const e=I.MIT[k];return e[LANG]||e.de};
+const KL=k=>{const e=I.KAT[k];return e[LANG]||e.de};
+const TYP_KEYS=["farm","kauf","ort","inst"];
+const MIT_KEYS=["ja","nein","teilweise","verschollen","unbekannt"];
+const esc = s => String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmt = n => n==null?"–":n.toLocaleString(I.locale[LANG]);
+function dms(v,pos,neg){const a=Math.abs(v),d=Math.floor(a),mf=(a-d)*60,m=Math.floor(mf),s=((mf-m)*60).toFixed(2);return `${d}°${String(m).padStart(2,"0")}′${s.padStart(5,"0")}″${v<0?neg:pos}`}
+
+/* Hauptkategorie der Bewirtschaftung: erster passender Eintrag in der Reihenfolge der Quelle */
+const BEW_KAT=[
+  {k:"kaffee",l:"Kaffee",c:"#7a4524",w:["Kaffee","Versuche zum Kaffeeanbau"]},
+  {k:"sisal",l:"Sisal",c:"#6e9a2a",w:["Sisal"]},
+  {k:"vieh",l:"Vieh & Milch",c:"#d39a1f",w:["Vieh","Käse","Butter","Milchbetrieb","Schafe","Geflügel","Hundezucht"]},
+  {k:"acker",l:"Ackerbau",c:"#e4cf55",w:["Landwirtschaft","Mais","Sonnenblumen","Baumwolle","Kartoffeln","Tabak","Bohnen","Gemüse","Medizinalpflanzen"]},
+  {k:"obst",l:"Obst & Palmen",c:"#e2632b",w:["Citrus","Bananen","Palmen","Maracuja","Ananas","Mango","Apfelsinenwein","Blumen"]},
+  {k:"forst",l:"Wald & Forst",c:"#1f5a43",w:["Eukalyptus","Pinien","Wald","Grevillea","Vetiver"]},
+  {k:"handel",l:"Handel & Gewerbe",c:"#2f5f86",w:["Handel","Handelsvertretungen","Handelshaus","Immobilien","Autowerkstatt","Autovertretung und Stahlbau","Marmorbruch und Aufbereitung","Eisenerz im Tagebau","Wasserabfüllung","Ziegelei","Betrieb eine Weinfabrik"]},
+  {k:"ort",l:"Ort, Schule, Mission",c:"#8a5a9e",w:[]},
+  {k:"ohne",l:"keine Angabe",c:"#8c8578",w:[]}];
+const KAT_BY={}; BEW_KAT.forEach(k=>KAT_BY[k.k]=k);
+const titel=p=>TR(p.titel);
+function kategorie(p){
+  if(p.inst) return "ort";
+  for(const b of p.bew){const k=BEW_KAT.find(k=>k.w.includes(b)); if(k) return k.k;}
+  if(p.typ==="Kaufmann"||p.typ==="Techniker"||p.typ==="Werkstatt") return "handel";
+  return "ohne";
+}
+D.forEach(p=>p.kat=kategorie(p));
+
+/* Karte */
+const map = L.map("map",{zoomControl:true,preferCanvas:false}).setView([-12,15.2],6);
+const topo = L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",{maxZoom:17,attribution:'Karte: © <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA), Daten © <a href="https://www.openstreetmap.org/copyright">OSM</a>'});
+const osm = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'});
+const ESRI="https://server.arcgisonline.com/ArcGIS/rest/services/";
+const satImg = ()=>L.tileLayer(ESRI+"World_Imagery/MapServer/tile/{z}/{y}/{x}",{maxZoom:19,maxNativeZoom:18,attribution:"Luftbild © Esri, Maxar, Earthstar Geographics"});
+const strassen = L.tileLayer(ESRI+"Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}",{maxZoom:19,maxNativeZoom:18,pane:"overlayPane",attribution:"Straßen © Esri"});
+const namen = L.tileLayer(ESRI+"Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",{maxZoom:19,maxNativeZoom:18,pane:"overlayPane",attribution:"Ortsnamen © Esri"});
+const satBeschr = L.layerGroup([satImg(), strassen, namen]);
+const sat = satImg();
+satBeschr.addTo(map);
+let ebenen=null;
+function baueEbenen(){ if(ebenen) map.removeControl(ebenen);
+  const o={}; o[T("ly_satlab")]=satBeschr; o[T("ly_sat")]=sat; o[T("ly_topo")]=topo; o[T("ly_osm")]=osm;
+  ebenen=L.control.layers(o,null,{position:"topright"}).addTo(map); }
+baueEbenen();
+L.control.scale({imperial:false}).addTo(map);
+const cluster = L.markerClusterGroup({maxClusterRadius:38,spiderfyOnMaxZoom:true,showCoverageOnHover:false});
+map.addLayer(cluster);
+
+function popupHtml(p){
+  const rows=[];
+  if(p.bew.length) rows.push([T("p_bew"),esc(p.bew.map(TR).join(", "))]);
+  rows.push([T("p_kat"),`<span class="dot" style="display:inline-block;vertical-align:middle;margin-right:5px;background:${KAT_BY[p.kat].c}"></span>${KL(p.kat)}`]);
+  if(p.ha) rows.push([T("p_ha"),fmt(p.ha)+" ha"]);
+  if(p.hoehe) rows.push([T("p_h"),fmt(p.hoehe)+" m"]);
+  if(!p.inst) rows.push([T("p_mit"),IL(p.mitglied)]);
+  rows.push([T("p_pos"),`<span class="mono">${dms(p.lat,"N","S")} ${dms(p.lon,"E","W")}<br>${p.lat.toFixed(6)}, ${p.lon.toFixed(6)}</span>`]);
+  return `<div class="pop">
+    <div class="pop-nr">${p.inst&&p.typ==="Ort"?"":T("p_no")+" "+p.nr}</div>
+    <div class="pop-t">${esc(titel(p)||T("p_noname"))}</div>
+    <div class="pop-typ">${esc(TR(p.typ))}${p.inst&&p.typ==="Ort"?" · "+T("p_ref")+" "+p.nr:""}</div>
+    <dl>${rows.map(r=>`<dt>${r[0]}</dt><dd>${r[1]}</dd>`).join("")}</dl>
+    ${p.info?`<div>${esc(TR(p.info))}</div>`:""}
+    ${p.sammel?`<div class="warn">${T("p_sammel",{m:p.versatz||100})}</div>`:p.versatz?`<div class="warn">${T("p_versatz",{m:p.versatz})}</div>`:""}
+    <div style="margin-top:8px;font-size:13px"><a href="https://www.google.com/maps/@${p.lat},${p.lon},3000m/data=!3m1!1e3" target="_blank" rel="noopener">${T("p_gmaps")}</a> · <a href="https://www.openstreetmap.org/?mlat=${p.lat}&mlon=${p.lon}#map=14/${p.lat}/${p.lon}" target="_blank" rel="noopener">OSM</a></div>
+  </div>`;
+}
+
+let farbModus="bew";
+const farbe=p=>farbModus==="art"?css("--"+TYP_GROUP(p.typ)):KAT_BY[p.kat].c;
+const hellText=c=>{const n=parseInt(c.replace("#",""),16);const r=n>>16,g=(n>>8)&255,b=n&255;return (r*299+g*587+b*114)/1000>165};
+const pinIcon=p=>{const c=farbe(p);return L.divIcon({className:"",html:`<span class="pin ${p.sammel?"sammel":""}" style="background:${c};color:${hellText(c)?"#2a2620":"#fff"}">${p.nr}</span>`,iconSize:null})};
+const markers = new Map();
+D.forEach(p=>{
+  const m=L.marker([p.lat,p.lon],{icon:pinIcon(p),title:"# "+p.nr,keyboard:true});
+  m.bindPopup(()=>popupHtml(p),{maxWidth:320});
+  markers.set(p.nr,{m,p});
+});
+
+/* Filter-UI */
+const typCounts={}, mitCounts={}, bewCounts={};
+D.forEach(p=>{const g=TYP_GROUP(p.typ);typCounts[g]=(typCounts[g]||0)+1;mitCounts[p.mitglied]=(mitCounts[p.mitglied]||0)+1;p.bew.forEach(b=>bewCounts[b]=(bewCounts[b]||0)+1)});
+const chip=(name,val,label,n,color)=>`<label class="chip"><input type="checkbox" name="${name}" value="${val}" checked>${color?`<span class="dot" style="background:${color}"></span>`:""}${label} <span class="h">${n}</span></label>`;
+const sel=document.getElementById("f-bew");
+function baueFilter(){
+  const an=n=>new Set([...document.querySelectorAll(`input[name=${n}]`)].filter(i=>i.checked).map(i=>i.value));
+  const typAlt=document.querySelector("input[name=typ]")?an("typ"):null, mitAlt=document.querySelector("input[name=mit]")?an("mit"):null;
+  document.getElementById("f-typ").innerHTML=TYP_KEYS.filter(k=>typCounts[k]).map(k=>chip("typ",k,GL(k),typCounts[k],css("--"+k))).join("");
+  document.getElementById("f-mit").innerHTML=MIT_KEYS.filter(k=>mitCounts[k]).map(k=>chip("mit",k,IL(k),mitCounts[k])).join("");
+  if(typAlt) document.querySelectorAll("input[name=typ]").forEach(i=>i.checked=typAlt.has(i.value));
+  if(mitAlt) document.querySelectorAll("input[name=mit]").forEach(i=>i.checked=mitAlt.has(i.value));
+  const wert=sel.value; sel.querySelectorAll("option:not([value=''])").forEach(o=>o.remove());
+  Object.entries(bewCounts).filter(([,n])=>n>=2).sort((a,b)=>b[1]-a[1]).forEach(([b,n])=>{const o=document.createElement("option");o.value=b;o.textContent=`${TR(b)} (${n})`;sel.appendChild(o)});
+  sel.value=wert;
+}
+baueFilter();
+
+const $=id=>document.getElementById(id);
+const numVal=id=>{const v=$(id).value;return v===""?null:+v};
+const katAus=new Set();
+function current(opt){opt=opt||{};
+  const typ=new Set([...document.querySelectorAll('input[name=typ]:checked')].map(i=>i.value));
+  const mit=new Set([...document.querySelectorAll('input[name=mit]:checked')].map(i=>i.value));
+  const bew=sel.value, amin=HA_STUFEN[+$("f-ha").value], sammel=$("f-sammel").checked;
+  return D.filter(p=>{
+    if(!opt.ohneTyp && !typ.has(TYP_GROUP(p.typ))) return false;
+    if(!opt.ohneKat && katAus.has(p.kat)) return false;
+    if(!mit.has(p.mitglied)) return false;
+    if(bew && !p.bew.includes(bew)) return false;
+    if(amin>0 && !(p.ha>=amin)) return false;
+    if(!sammel && p.sammel) return false;
+    return true;
+  });
+}
+
+/* Flächen-Schieber: Stufen statt linear, weil die Flächen von 3 ha bis 22.000 ha reichen */
+const HA_STUFEN=[0,100,250,500,1000,1500,2000,3000,5000,10000];
+function haLabel(){const v=HA_STUFEN[+$("f-ha").value];$("f-ha-out").textContent=v?T("ha_from",{n:fmt(v)}):T("ha_all");$("f-ha-note").hidden=!v}
+let shown=D;
+function apply(zoom){
+  shown=current();
+  cluster.clearLayers();
+  cluster.addLayers(shown.map(p=>markers.get(p.nr).m));
+  $("cnt").textContent=T("count",{n:shown.length,t:D.length});
+  renderList(); renderStats(); if(typeof renderLegende==='function'&&legende) renderLegende();
+  if(zoom) zoomToShown();
+}
+/* Auto-Zoom: nach jeder Filteränderung auf alle passenden Einträge zoomen.
+   Bei Zahlenfeldern erst, wenn eine Weile nicht mehr getippt wird. */
+function zoomToShown(){
+  if(!shown.length) return;
+  const mobil=window.matchMedia("(max-width:760px)").matches;
+  const unten=mobil&&!side.classList.contains("zu")?side.offsetHeight:0;
+  map.closePopup();
+  map.flyToBounds(L.latLngBounds(shown.map(p=>[p.lat,p.lon])),
+    {paddingTopLeft:[40,40],paddingBottomRight:[40,40+unten],maxZoom:12,duration:0.8});
+}
+let tippTimer=null;
+document.querySelector("#tab-filter").addEventListener("input",e=>{
+  clearTimeout(tippTimer);
+  if(e.target.id==="f-ha"){ haLabel(); apply(false); tippTimer=setTimeout(()=>zoomToShown(),500); }
+  else apply(true);
+});
+function resetFilter(zoom){katAus.clear();document.querySelectorAll("#tab-filter input[type=checkbox]").forEach(i=>i.checked=true);$("f-ha").value=0;haLabel();sel.value="";apply(zoom)}
+$("reset").onclick=()=>resetFilter(true);
+
+/* Liste */
+function renderList(){
+  const ol=$("list");
+  ol.innerHTML=shown.slice().sort((a,b)=>a.nr-b.nr).map(p=>`<li tabindex="0" data-nr="${p.nr}"><span class="nr">${p.nr}</span><span class="t">${esc(titel(p)||TR(p.typ))}<span class="h"> · ${esc(TR(p.typ))}</span></span><span class="h">${p.hoehe?fmt(p.hoehe)+" m":""}</span></li>`).join("");
+}
+$("list").addEventListener("click",e=>{const li=e.target.closest("li");if(li)go(+li.dataset.nr)});
+$("list").addEventListener("keydown",e=>{if(e.key==="Enter"){const li=e.target.closest("li");if(li)go(+li.dataset.nr)}});
+
+/* Statistik */
+function bars(obj,color,limit){
+  const arr=Object.entries(obj).sort((a,b)=>b[1]-a[1]).slice(0,limit||99);const max=Math.max(1,...arr.map(a=>a[1]));
+  return `<div class="bars">${arr.map(([k,n])=>`<div class="bar"><span title="${esc(k)}">${esc(k)}</span><i style="width:${(n/max*100).toFixed(1)}%;${color?`background:${color(k)}`:""}"></i><em>${n}</em></div>`).join("")}</div>`;
+}
+function renderStats(){
+  const farms=shown.filter(p=>p.typ==="Farm");
+  const ha=farms.reduce((s,p)=>s+(p.ha||0),0), withHa=farms.filter(p=>p.ha).length;
+  const hs=farms.filter(p=>p.hoehe).map(p=>p.hoehe); const avgH=hs.length?Math.round(hs.reduce((a,b)=>a+b,0)/hs.length):null;
+  const typ={},mit={},bew={},band={};
+  shown.forEach(p=>{const g=GL(TYP_GROUP(p.typ));typ[g]=(typ[g]||0)+1;if(!p.inst)mit[IL(p.mitglied)]=(mit[IL(p.mitglied)]||0)+1;p.bew.forEach(b=>{b=TR(b);bew[b]=(bew[b]||0)+1})});
+  const B=[T("s_b1"),"500–999 m","1000–1499 m","1500–1999 m",T("s_b5")]; B.forEach(k=>band[k]=0);
+  farms.forEach(p=>{if(!p.hoehe)return;const h=p.hoehe;band[B[h<500?0:h<1000?1:h<1500?2:h<2000?3:4]]++});
+  const bandHtml=`<div class="bars">${Object.entries(band).map(([k,n])=>{const max=Math.max(1,...Object.values(band));return `<div class="bar"><span>${k}</span><i style="width:${(n/max*100).toFixed(1)}%;background:var(--farm)"></i><em>${n}</em></div>`}).join("")}</div>`;
+  const typColor=k=>css("--"+TYP_KEYS.find(x=>GL(x)===k));
+  $("stats").innerHTML=`
+    <div class="kpis">
+      <div class="kpi"><b>${shown.length}</b><span>${T("s_entries")}</span></div>
+      <div class="kpi"><b>${farms.length}</b><span>${T("s_farms")}</span></div>
+      <div class="kpi"><b>${fmt(ha)}</b><span>${T("s_area",{n:withHa})}</span></div>
+      <div class="kpi"><b>${avgH?fmt(avgH):"–"}</b><span>${T("s_height")}</span></div>
+    </div>
+    <p class="lbl">${T("s_type")}</p>${bars(typ,typColor)}
+    <p class="lbl">${T("s_mit")}</p>${bars(mit)}
+    <p class="lbl">${T("s_bew")}</p>${bars(bew,()=>"var(--farm)",12)}
+    <p class="lbl">${T("s_band")}</p>${bandHtml}
+    <p class="note">${T("s_note",{d:esc((window.META||{}).stand||"")})}</p>`;
+}
+
+/* Tabs */
+document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll("nav button").forEach(x=>x.setAttribute("aria-selected",x===b));
+  ["filter","liste","stat"].forEach(t=>$("tab-"+t).hidden=(t!==b.dataset.tab));
+  side.classList.remove("zu");
+});
+const side=$("side");
+$("drawer").onclick=()=>side.classList.toggle("zu");
+
+/* Suche */
+let selEl=null;
+function go(nr){
+  const hit=markers.get(nr);
+  if(!hit){$("msg").textContent=T("m_nonum",{n:nr});return false}
+  $("msg").textContent="";
+  if(!shown.includes(hit.p)){resetFilter(false)}
+  cluster.zoomToShowLayer(hit.m,()=>{hit.m.openPopup();
+    if(selEl)selEl.classList.remove("sel");selEl=hit.m.getElement()?.querySelector(".pin");selEl?.classList.add("sel");});
+  if(window.matchMedia("(max-width:760px)").matches) side.classList.add("zu");
+  return true;
+}
+const norm=s=>String(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim();
+const dl=$("vorschlaege");
+function baueVorschlaege(){dl.innerHTML="";
+  [...new Set(D.flatMap(p=>[titel(p),TR(p.ort)]).filter(Boolean))].sort((a,b)=>a.localeCompare(b,LANG)).forEach(n=>{const o=document.createElement("option");o.value=n;dl.appendChild(o)});}
+baueVorschlaege();
+function suche(eingabe){
+  $("treffer").innerHTML=""; $("msg").textContent="";
+  const roh=eingabe.trim(); if(!roh){$("msg").textContent=T("m_empty");return}
+  if(/^\d+$/.test(roh)) return go(parseInt(roh,10));
+  const q=norm(roh);
+  const namen=p=>[p.titel,titel(p),p.ort,TR(p.ort)].map(norm);
+  let hits=D.filter(p=>namen(p).includes(q));
+  if(!hits.length) hits=D.filter(p=>namen(p).some(n=>n&&n.includes(q))||p.bew.some(b=>norm(b)===q||norm(TR(b))===q));
+  if(!hits.length){$("msg").textContent=T("m_none",{q:roh});return}
+  if(hits.length===1) return go(hits[0].nr);
+  hits.sort((a,b)=>a.nr-b.nr);
+  $("msg").textContent=T("m_hits",{n:hits.length});
+  $("treffer").innerHTML=hits.slice(0,12).map(p=>`<button type="button" data-nr="${p.nr}"><b>${p.nr}</b> ${esc(titel(p)||TR(p.typ))}</button>`).join("")+(hits.length>12?`<span class="h">${T("m_more",{n:hits.length-12})}</span>`:"");
+  map.flyToBounds(L.latLngBounds(hits.map(p=>[p.lat,p.lon])),{padding:[50,50],maxZoom:12,duration:.8});
+}
+$("treffer").addEventListener("click",e=>{const b=e.target.closest("button");if(b)go(+b.dataset.nr)});
+$("sform").addEventListener("submit",e=>{e.preventDefault();suche($("q").value)});
+
+if(window.matchMedia("(max-width:760px)").matches) side.classList.add("zu");
+/* Legende */
+const Legende=L.Control.extend({options:{position:"bottomleft"},onAdd(){const d=L.DomUtil.create("div","legende");L.DomEvent.disableClickPropagation(d);if(window.matchMedia("(max-width:760px)").matches)d.classList.add("zu");d.addEventListener("click",e=>{if(e.target.closest("b"))d.classList.toggle("zu");else legKlick(e)});this._d=d;return d}});
+const legende=new Legende().addTo(map);
+function renderLegende(){
+  const art=farbModus==="art";
+  const basis=current(art?{ohneTyp:true}:{ohneKat:true});
+  const n={}; basis.forEach(p=>{const k=art?TYP_GROUP(p.typ):p.kat;n[k]=(n[k]||0)+1});
+  const typAn=new Set([...document.querySelectorAll('input[name=typ]:checked')].map(i=>i.value));
+  const eintraege=art
+    ? TYP_KEYS.map(k=>({k,l:GL(k),c:css("--"+k),n:n[k]||0,aus:!typAn.has(k)}))
+    : BEW_KAT.map(k=>({k:k.k,l:KL(k.k),c:k.c,n:n[k.k]||0,aus:katAus.has(k.k)}));
+  const irgendAus=eintraege.some(e=>e.aus);
+  legende._d.innerHTML=`<b title="${T("l_toggle")}">${art?T("by_art"):T("by_bew")} ▾</b>`+
+    eintraege.filter(e=>e.n||e.aus).map(e=>`<button type="button" class="leg${e.aus?" aus":""}" data-k="${e.k}" aria-pressed="${!e.aus}" title="${e.aus?T("l_show"):T("l_hide")}"><span class="dot" style="background:${e.c}"></span><span class="lt">${e.l}</span><em>${e.n}</em></button>`).join("")+
+    `<div class="leg-fuss">${irgendAus?`<button type="button" class="leg-alle">${T("l_all")}</button>`:`<span>${T("l_hint")}</span>`}</div>`;
+}
+function legKlick(e){
+  const art=farbModus==="art";
+  if(e.target.closest(".leg-alle")){
+    if(art) document.querySelectorAll('input[name=typ]').forEach(i=>i.checked=true); else katAus.clear();
+    return apply(true);
+  }
+  const b=e.target.closest(".leg"); if(!b) return;
+  const k=b.dataset.k;
+  if(art){const i=document.querySelector(`input[name=typ][value="${k}"]`); if(i) i.checked=!i.checked;}
+  else katAus.has(k)?katAus.delete(k):katAus.add(k);
+  apply(true);
+}
+document.querySelectorAll('input[name=farbe]').forEach(r=>{
+  r.checked=r.value===farbModus;
+  r.addEventListener("change",()=>{farbModus=r.value;
+    markers.forEach(({m,p})=>m.setIcon(pinIcon(p)));renderLegende();});
+});
+
+/* Messen: Punkte auf die Karte klicken, Luftlinie in km */
+const MessBtn=L.Control.extend({options:{position:"topleft"},onAdd(){
+  const box=L.DomUtil.create("div","leaflet-bar");const b=L.DomUtil.create("button","mess-btn",box);
+  b.type="button";b.title=T("ms_title");b.setAttribute("aria-label",T("ms_title"));
+  b.innerHTML='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17 17 3l4 4L7 21z"/><path d="m7 13 2 2M10 10l2 2M13 7l2 2"/></svg>';
+  L.DomEvent.disableClickPropagation(box);L.DomEvent.on(b,"click",()=>messen.an?messen.stop():messen.start());this._b=b;return box}});
+const messBtn=new MessBtn().addTo(map);
+const MessPanel=L.Control.extend({options:{position:"topleft"},onAdd(){const d=L.DomUtil.create("div","mess-panel");L.DomEvent.disableClickPropagation(d);d.hidden=true;this._d=d;return d}});
+const messPanel=new MessPanel().addTo(map);
+const km=m=>m<1000?Math.round(m)+" m":(m/1000).toLocaleString(I.locale[LANG],{maximumFractionDigits:m<10000?2:1})+" km";
+const messen={an:false,pts:[],grp:L.layerGroup().addTo(map),
+  start(){this.an=true;this.pts=[];this.grp.clearLayers();map.getContainer().classList.add("messen");map.doubleClickZoom.disable();messBtn._b.classList.add("an");messPanel._d.hidden=false;this.zeige()},
+  stop(){this.an=false;map.getContainer().classList.remove("messen");map.doubleClickZoom.enable();messBtn._b.classList.remove("an");if(this.pts.length<2){this.grp.clearLayers();messPanel._d.hidden=true}else this.zeige()},
+  weg(){this.pts=[];this.grp.clearLayers();if(this.an)this.stop();messPanel._d.hidden=true},
+  summe(){let s=0;for(let i=1;i<this.pts.length;i++)s+=map.distance(this.pts[i-1],this.pts[i]);return s},
+  add(ll){this.pts.push(ll);this.grp.clearLayers();
+    L.polyline(this.pts,{color:"#fff",weight:5,opacity:.8}).addTo(this.grp);
+    L.polyline(this.pts,{color:css("--accent"),weight:3,dashArray:"6 6"}).addTo(this.grp);
+    let s=0;this.pts.forEach((p,i)=>{if(i)s+=map.distance(this.pts[i-1],p);const c=L.circleMarker(p,{radius:5,color:"#fff",weight:2,fillColor:css("--accent"),fillOpacity:1}).addTo(this.grp);
+      if(i)c.bindTooltip(km(s),{permanent:true,direction:"right",offset:[8,0],className:"mess-label"});});
+    this.zeige()},
+  zeige(){const d=messPanel._d,s=this.summe();
+    d.innerHTML=(this.an&&!this.pts.length?T("ms_hint")+" ":"")+`<strong>${this.pts.length>1?km(s):"–"}</strong>${T("ms_line")}${this.pts.length>2?", "+T("ms_parts",{n:this.pts.length-1}):""}`+
+      `<div class="zeile">${this.an?`<button type="button" data-a="fertig">${T("ms_done")}</button>`:`<button type="button" data-a="neu">${T("ms_new")}</button>`}<button type="button" data-a="weg">${T("ms_clear")}</button></div>`;
+    d.querySelectorAll("button").forEach(b=>b.onclick=()=>{const a=b.dataset.a;a==="fertig"?this.stop():a==="neu"?this.start():this.weg()});}
+};
+map.on("click",e=>{if(messen.an)messen.add(e.latlng)});
+map.on("dblclick",()=>{if(messen.an)messen.stop()});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&messen.an)messen.stop()});
+
+/* Schriftgröße */
+const sr=$("s-range");
+function setSize(v){
+  v=Math.max(90,Math.min(150,Math.round(v/10)*10));
+  sr.value=v; $("s-out").textContent=v+" %";
+  document.documentElement.style.setProperty("--s",v/100);
+  $("s-minus").disabled=v<=90; $("s-plus").disabled=v>=150;
+  try{localStorage.setItem("schrift",v)}catch(e){}
+  map.invalidateSize();
+  requestAnimationFrame(()=>side.style.setProperty("--peek",(side.querySelector("header").offsetHeight+4)+"px"));
+}
+sr.addEventListener("input",()=>setSize(+sr.value));
+$("s-minus").onclick=()=>setSize(+sr.value-10);
+$("s-plus").onclick=()=>setSize(+sr.value+10);
+let gespeichert=100; try{gespeichert=+localStorage.getItem("schrift")||100}catch(e){}
+setSize(gespeichert);
+
+function setLang(l,init){
+  LANG=I.langs[l]?l:"de";
+  try{localStorage.setItem("sprache",LANG)}catch(e){}
+  document.documentElement.lang=LANG; document.title=T("title");
+  document.querySelectorAll("[data-i18n]").forEach(e=>e.textContent=T(e.dataset.i18n));
+  document.querySelectorAll("[data-i18n-ph]").forEach(e=>e.placeholder=T(e.dataset.i18nPh));
+  document.querySelectorAll("[data-i18n-aria]").forEach(e=>e.setAttribute("aria-label",T(e.dataset.i18nAria)));
+  document.querySelectorAll("[data-i18n-title]").forEach(e=>e.title=T(e.dataset.i18nTitle));
+  document.querySelectorAll("#lang button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.lang===LANG));
+  if(init) return;
+  baueFilter(); baueVorschlaege(); baueEbenen(); haLabel();
+  messBtn._b.title=T("ms_title"); messBtn._b.setAttribute("aria-label",T("ms_title"));
+  if(!messPanel._d.hidden) messen.zeige();
+  $("msg").textContent=""; $("treffer").innerHTML="";
+  const offen=[...markers.values()].find(({m})=>m.isPopupOpen());
+  apply(false);
+  if(offen){offen.m.closePopup();offen.m.openPopup();}
+  map.invalidateSize();
+}
+document.querySelectorAll("#lang button").forEach(b=>b.onclick=()=>setLang(b.dataset.lang));
+setLang(LANG,true); haLabel();
+
+apply();
+map.fitBounds(L.latLngBounds(D.map(p=>[p.lat,p.lon])).pad(0.08));
+/* Direktlink (z. B. aus dem PDF): einmal öffnen, danach Adresse bereinigen,
+   damit ein Neuladen wieder die komplette Karte zeigt */
+const h=parseInt(location.hash.slice(1),10);
+if(!isNaN(h)){ setTimeout(()=>go(h),300); try{history.replaceState(null,"",location.pathname+location.search)}catch(e){} }
+})();
+</script>
+</body>
+</html>
